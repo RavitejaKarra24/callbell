@@ -34,7 +34,8 @@ No cloud, no account, no Bluetooth. Both devices just need to be on the same Wi-
    - Tap **Send a test to the Mac**. A green "CallBell test" card should appear on the Mac.
    - Tap **Turn off battery optimisation** so Android doesn't delay it while the phone sleeps.
 
-You don't need to keep the app open. Android starts it whenever the phone rings.
+You don't need to keep the app open. CallBell keeps a quiet "CallBell is active" notification
+so the phone doesn't freeze it in the background, and starts again by itself after a reboot.
 
 ## Troubleshooting
 
@@ -44,7 +45,7 @@ You don't need to keep the app open. Android starts it whenever the phone rings.
 | Mac menu says "Not listening" | Another copy is already running. Quit it. |
 | Name missing, only the number | Contacts permission is off, or the number isn't saved in your contacts. |
 | "Unknown caller" | Call logs permission is off, or the caller hid their number. |
-| Works, then stops after a while (Samsung/Xiaomi/OnePlus) | Settings → Apps → CallBell → Battery → **Unrestricted**. |
+| Works, then stops after a while (Samsung/Xiaomi/OnePlus/realme) | Open CallBell and check it says "✓ Listening for calls". Also Settings → Apps → CallBell → Battery → **Unrestricted**, allow auto launch, and lock it in recent apps. |
 
 ## How it works
 
@@ -62,6 +63,8 @@ You don't need to keep the app open. Android starts it whenever the phone rings.
 android/                 Android app (Kotlin, no external libraries)
   app/src/main/java/com/callbell/
     CallReceiver.kt      wakes on phone-state changes, decides ringing/missed/answered
+    CallService.kt       keeps the app alive (foreground service) and listens for calls
+    BootReceiver.kt      restarts the service after reboot or update
     Sender.kt            UDP send + wait for ack
     Crypto.kt            AES-GCM packet format
     MainActivity.kt      setup screen

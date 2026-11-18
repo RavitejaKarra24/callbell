@@ -19,14 +19,23 @@ import java.util.UUID
  * Quirk: when the app holds READ_CALL_LOG, Android delivers every state change twice,
  * once without the number and once with it. We prefer the copy with the number and only
  * fall back to the number-less copy if the other one doesn't arrive quickly.
+ *
+ * Two instances exist: one declared in the manifest (Android starts the app for it), and one
+ * registered by [CallService]. While the service runs, the manifest copy steps aside so each
+ * broadcast is handled once.
  */
-class CallReceiver : BroadcastReceiver() {
+class CallReceiver(private val fromService: Boolean = false) : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED) return
         val ctx = context.applicationContext
         val prefs = Prefs(ctx)
         if (!prefs.enabled || prefs.code.isBlank()) return
+        if (!fromService) {
+            if (CallService.running) return
+            // The service was killed; this broadcast still got through, so bring it back.
+            CallService.start(ctx)
+        }
 
         val state = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: return
         @Suppress("DEPRECATION")
@@ -57,7 +66,10 @@ class CallReceiver : BroadcastReceiver() {
             TelephonyManager.EXTRA_STATE_RINGING -> {
                 val authoritative = hasNumber || !canReadNumber
                 synchronized(LOCK) {
-                    if (prefs.phase != Prefs.PHASE_RINGING) {
+                    // A "ringing" phase older than any real ring means we missed the end of a
+                    // call. Without this check, that stuck phase would silence every later call.
+                    val stale = System.currentTimeMillis() - prefs.phaseAt > STALE_RING_MS
+                    if (prefs.phase != Prefs.PHASE_RINGING || stale) {
                         prefs.phase = Prefs.PHASE_RINGING
                         prefs.callId = UUID.randomUUID().toString()
                         prefs.callNumber = ""
@@ -104,5 +116,6 @@ class CallReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "CallBell"
         private val LOCK = Any()
+        private const val STALE_RING_MS = 3 * 60 * 1000L
     }
 }

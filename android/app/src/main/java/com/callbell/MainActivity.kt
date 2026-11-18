@@ -40,6 +40,7 @@ class MainActivity : Activity() {
     private lateinit var batteryStatus: TextView
     private lateinit var batteryButton: Button
     private lateinit var lastResult: TextView
+    private lateinit var serviceStatus: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -50,7 +51,10 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        // The app is in the foreground here, so Android always allows starting the service.
+        CallService.start(this)
         refresh()
+        window.decorView.postDelayed({ refresh() }, 500)
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -82,7 +86,10 @@ class MainActivity : Activity() {
             typeface = Typeface.MONOSPACE
             textSize = 24f
             isSingleLine = true
-            onChange { prefs.code = it.trim() }
+            onChange {
+                prefs.code = it.trim()
+                if (!CallService.running) CallService.start(this@MainActivity)
+            }
         })
 
         col.addView(heading("3. Test"))
@@ -90,6 +97,7 @@ class MainActivity : Activity() {
         testStatus = text("", 15f).also(col::addView)
 
         col.addView(heading("4. Keep it working in the background"))
+        serviceStatus = text("", 14f, muted = true).also(col::addView)
         batteryStatus = text("", 14f, muted = true).also(col::addView)
         batteryButton = button("Turn off battery optimisation") { askBatteryExemption() }.also(col::addView)
 
@@ -100,7 +108,12 @@ class MainActivity : Activity() {
             textSize = 16f
             isChecked = prefs.enabled
             setPadding(0, dp(8), 0, dp(8))
-            setOnCheckedChangeListener { _, on -> prefs.enabled = on }
+            setOnCheckedChangeListener { _, on ->
+                prefs.enabled = on
+                if (on) CallService.start(this@MainActivity) else CallService.stop(this@MainActivity)
+                // The service starts a moment later; update the status line once it has.
+                postDelayed({ refresh() }, 500)
+            }
         })
         col.addView(text("Mac IP address (optional, only if the test fails, e.g. 192.168.1.20)", 14f, muted = true))
         col.addView(EditText(this).apply {
@@ -139,6 +152,12 @@ class MainActivity : Activity() {
         } else {
             batteryStatus.text = "Android may delay CallBell while the phone sleeps. Allowing unrestricted battery use makes calls arrive reliably (it uses no battery when no call comes in)."
             batteryButton.visibility = View.VISIBLE
+        }
+        serviceStatus.text = when {
+            CallService.running -> "✓ Listening for calls (shown as \"CallBell is active\" in notifications)."
+            !prefs.enabled -> "Forwarding is turned off in Settings below."
+            prefs.code.isBlank() -> "Enter the pairing code to start listening for calls."
+            else -> "Not listening yet. Reopen CallBell to start it."
         }
         lastResult.text = prefs.lastResult
     }

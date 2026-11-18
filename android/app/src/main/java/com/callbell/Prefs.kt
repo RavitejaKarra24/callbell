@@ -31,7 +31,10 @@ class Prefs(context: Context) {
     // State of the current call, kept here because every broadcast gets a fresh receiver.
     var phase: String
         get() = sp.getString("phase", PHASE_IDLE) ?: PHASE_IDLE
-        set(v) = put("phase", v)
+        set(v) = sp.edit().putString("phase", v).putLong("phase_at", System.currentTimeMillis()).apply()
+    /** When [phase] last changed, in epoch millis. */
+    val phaseAt: Long
+        get() = sp.getLong("phase_at", 0L)
     var callId: String
         get() = str("call_id")
         set(v) = put("call_id", v)
