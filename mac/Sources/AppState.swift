@@ -35,6 +35,9 @@ final class AppState: ObservableObject {
     private let listener = Listener()
     private let defaults = UserDefaults.standard
     private let maxHistory = 30
+    private var ringTask: Task<Void, Never>?
+    private static let ringInterval: TimeInterval = 2.5
+    private static let maxRingSeconds: TimeInterval = 60
 
     private init() {
         let defaults = UserDefaults.standard
@@ -54,7 +57,10 @@ final class AppState: ObservableObject {
         soundOn = defaults.object(forKey: "soundOn") as? Bool ?? true
         unseen = defaults.integer(forKey: "unseen")
 
-        overlay.onDismiss = { [weak self] in self?.markSeen() }
+        overlay.onDismiss = { [weak self] in
+            self?.stopRinging()
+            self?.markSeen()
+        }
         listener.setCode(code)
         listener.onEvent = { event, ip in
             Task { @MainActor in AppState.shared.handle(event, from: ip) }
@@ -100,14 +106,15 @@ final class AppState: ObservableObject {
         switch status {
         case .ringing:
             overlay.show(record, autoHide: nil)
-            play("Glass")
+            startRinging(callId: record.id)
         case .missed:
+            stopRinging()
             unseen += 1
             defaults.set(unseen, forKey: "unseen")
-            let wasShowingRing = overlay.isShowing(callId: record.id)
             overlay.show(record, autoHide: nil) // stays until dismissed
-            if !wasShowingRing { play("Glass") }
+            play("Glass")
         case .answered:
+            stopRinging()
             if overlay.isShowing(callId: record.id) { overlay.show(record, autoHide: 4) }
         case .test:
             break
@@ -117,6 +124,26 @@ final class AppState: ObservableObject {
     private func play(_ name: String) {
         guard soundOn else { return }
         NSSound(named: NSSound.Name(name))?.play()
+    }
+
+    /// Repeats the ring sound while the phone is ringing. It stops when the call is answered
+    /// or missed, when the card is dismissed, or after `maxRingSeconds` in case the
+    /// "call ended" message never arrives.
+    private func startRinging(callId: String) {
+        stopRinging()
+        ringTask = Task { @MainActor [weak self] in
+            let started = Date()
+            while !Task.isCancelled, Date().timeIntervalSince(started) < Self.maxRingSeconds {
+                guard let self, self.overlay.isShowing(callId: callId) else { return }
+                self.play("Glass")
+                try? await Task.sleep(nanoseconds: UInt64(Self.ringInterval * 1_000_000_000))
+            }
+        }
+    }
+
+    private func stopRinging() {
+        ringTask?.cancel()
+        ringTask = nil
     }
 
     // MARK: - User actions
